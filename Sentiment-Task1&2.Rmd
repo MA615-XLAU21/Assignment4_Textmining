@@ -1,0 +1,184 @@
+---
+title: "Text Mining"
+subtitle: " Task 1 & 2 "
+author: "Xiang Li"
+date: "12/3/2021"
+output: 
+  pdf_document:
+  latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE )
+library(gutenbergr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(tidytext)
+library(textdata)
+library(tnum)
+library(ggplot2)
+library(magrittr)
+library(utils)
+library(wordcloud)
+library(reshape2)
+library(gridExtra)
+library(magrittr)
+library(tidyverse)
+```
+# Task 1
+
+I choose `My Doggie and I`by R.M.Ballantyne as the resource of my text analysis.`My Doggie And I`tells the story of John Mellon (almost a doctor in chapter one) and what happens to him after he meets a certain little canine. This story surrounds a child waif, a young woman, a young gentleman doctor, and an elderly lady. This tale unfolds the story of a bond that brings these unlikely friends together and merges their separate paths of life into one common path. 
+
+```{r}
+data(stop_words)
+doggie <- gutenberg_download(21752)
+# add linenumber
+tidy_doggie_Book <- doggie %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_doggie <- doggie %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+```
+
+First, let us get a basic sense of most commoon word in the book.
+```{r fig.width=6, fig.height=4,fig.align = "center", fig.cap=" A visualization of the most common words"}
+tidy_doggie%>%
+  count(word, sort = TRUE) %>%
+  filter(n > 45) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n , word)) +
+  geom_col() +
+  labs(y = NULL)+
+  ggtitle("Plot of most common words")
+
+
+```
+
+
+```{r}
+#get sentiments analysis and explore three dictionaries
+
+#get_sentiments("afinn")
+#get_sentiments("bing")
+#get_sentiments("nrc")
+
+#nrc_joy <- get_sentiments("nrc") %>% 
+ # filter(sentiment == "joy")
+#tidy_doggie %>%
+#  inner_join(nrc_joy) %>%
+ # count(word, sort = TRUE)
+```
+# Task 2- Bag of Words Analysis
+
+With several options for sentiment lexicons, we can use inner_join() to calculate the sentiment in different ways. Following the step in `Textmining in R`, I choose three general-purpose lexicons are
+            *AFINN from Finn Årup Nielsen,
+            *bing from Bing Liu and collaborators, and
+            *nrc from Saif Mohammad and Peter Turney.
+and generat three plot which showed an estimate of the net sentiment (positive - negative) in each chunk of the novel text for each sentiment lexicon.
+
+```{r fig.width=6, fig.height=4,fig.align = "center", fig.cap="visualization of an estimate of the net sentiment (positive - negative) for each sentiment lexicon"}
+afinn <- tidy_doggie_Book %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = linenumber %/% 20) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  tidy_doggie_Book %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  tidy_doggie_Book %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 20, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+Discussion:
+
+# Task 2 Extra credit
+The additional lexicons I found is that `loughran`. And here is the sentiment flow of the book.
+```{r}
+
+loughran <- tidy_doggie_Book %>% 
+    inner_join(get_sentiments("loughran") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    )%>%
+  mutate(method = "loughran") %>%
+  count(method, index = linenumber %/% 10, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+loughran %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE)
+
+
+```
+Discussion:
+
+```{r}
+#Most common positive and negative words
+
+bing_word_counts <- tidy_doggie_Book %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+#bing_word_counts
+
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 15) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+
+```
+
+```{r}
+#Worldclouds
+
+ tidy_doggie_Book%>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100))
+
+```
+
+```{r}
+tidy_doggie_Book %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray80"),
+                   max.words = 100)
+```
+
+
+

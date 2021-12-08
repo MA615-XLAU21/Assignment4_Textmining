@@ -1,0 +1,135 @@
+---
+title: "Text Mining-Task 3"
+author: "Xiang Li"
+date: "12/7/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE )
+library(gutenbergr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(tidytext)
+library(textdata)
+library(tnum)
+library(ggplot2)
+library(magrittr)
+library(utils)
+library(wordcloud)
+library(reshape2)
+library(gridExtra)
+library(magrittr)
+library(tidyverse)
+```
+
+# Task 3
+```{r}
+library(tnum)
+tnum.authorize("mssp1.bu.edu")
+tnum.setSpace("test2")
+source("Book2TN-v6A-1.R")
+```
+
+```{r}
+
+Book_Doggie <- gutenberg_download(21752)
+#write.table(Book_Doggie,'DoggieandI_text.txt',row.names = F)
+#adding <> mannual into txt file
+#Book_Doggie_tnum <- read.table("DoggieandI_text.txt", header = T)
+#tnBooksFromLines(Book_Doggie_tnum$text, "BallantyneR/DoggieandI")
+#tnum.getDBPathList(taxonomy="subject", levels=1)
+```
+
+```{r}
+w1 <- tnum.query("BallantyneR/DoggieandI# has text", start = 3 ,max=18)
+wdf1 <- tnum.objectsToDf((w1))
+table_of_contents <- wdf1 %>% dplyr::select(string.value)
+
+q1 <- tnum.query(query = "BallantyneR/DoggieandI# has ordinal", max=500)   ## everything
+ order1 <- tnum.objectsToDf(q1)
+
+
+
+## Look at just the headings shows the structure of the book
+w23 <- tnum.query("BallantyneR/DoggieandI/heading# has text", max=40)
+wdf3 <- tnum.objectsToDf(w23)
+
+w4 <- tnum.query("BallantyneR/DoggieandI/heading# has ordinal", max=40)
+wdf4 <- tnum.objectsToDf(w4)
+
+chapter_locations <- left_join(select(wdf3, subject, string.value), 
+                               select(wdf4, subject, numeric.value)) 
+                     
+chapter_locations %<>% mutate(chapter=1:14)
+
+w5 <- tnum.query("BallantyneR/DoggieandI/section:0008# has ordinal")
+wdf5 <- tnum.objectsToDf(w5)
+
+
+a <- chapter_locations %>% filter(chapter==2) %>% 
+                           select(numeric.value) %>% 
+                           unlist()
+
+a <- str_pad(as.character(a),4,side="left",pad="0")
+
+b <- paste0("BallantyneR/DoggieandI/section:",a,"#", " has ordinal")
+
+b
+w6 <- tnum.query("BallantyneR/DoggieandI/section:0008# has ordinal")
+
+
+
+## chapter 1 para 1, word counts for the 3 sentences in para 1
+q2 <- tnum.query("BallantyneR/DoggieandI# has *", max=3)
+df2 <- tnum.objectsToDf(q2)
+
+#  chapter locations  ordinal numbers
+ord_ch1 <- unlist(tnum.query("BallantyneR/DoggieandI/heading:0008# has ordinal"))
+ord_ch2 <- unlist(tnum.query("BallantyneR/DoggieandI/heading:0009# has ordinal"))
+
+
+ch1_txt <- tnum.query("BallantyneR/DoggieandI/section:0008/paragraph:0002/# has text", max=30)
+
+ch1_txt_df <- tnum.objectsToDf(ch1_txt)
+ch1_txt_df$string.value
+
+
+
+ch2_txt <- tnum.query("BallantyneR/DoggieandI/section:0008/paragraph:0002/sentence:# has *", max=30)
+ch2_txt_df <- tnum.objectsToDf(ch2_txt)
+
+ch2_txt_df$string.value
+
+length(ch2_txt_df$string.value)
+
+
+```
+
+#Sliced by sentences and do sentiment analysis
+```{r}
+doggie_w5 <- tnum.query("BallantyneR/DoggieandI/section# has text",max=500)
+
+doggie_wdf5 <- tnum.objectsToDf(doggie_w5)
+
+para_doggie_wdf5 <- doggie_wdf5 %>% pull(string.value) %>% 
+                      str_replace_all("\"","") %>% 
+                      str_flatten(collapse = " ")
+
+
+doggie.1 <- para_doggie_wdf5 %>% 
+  get_sentences() %>% 
+  sentiment() 
+
+doggie.1 %>% 
+ggplot() + geom_col(aes(x= sentence_id,y = sentiment))
+
+```
+
+```{r}
+doggie_word <- doggie_wdf5 %>% 
+  unnest_tokens(word,string.value) %>% anti_join(stop_words)
+```
+
+
