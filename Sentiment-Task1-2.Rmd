@@ -254,3 +254,12 @@ loughran_word_counts %>%
   labs(x = "Contribution to sentiment",
        y = NULL)
 ```
+# Reference
+
+Book Resource: https://www.gutenberg.org/cache/epub/21752/pg21752-images.html 
+
+Sentiment Analysis in R with {sentimentr} that handles Negation (Valence Shifters): https://www.r-bloggers.com/2020/04/sentiment-analysis-in-r-with-sentimentr-that-handles-negation-valence-shifters/ 
+
+Package `sentimentr`: https://cran.r-project.org/web/packages/sentimentr/sentimentr.pdf 
+
+tnum - instructions by Professor Haviland Wright: tnum - instructions and examples - v5.Rmd
