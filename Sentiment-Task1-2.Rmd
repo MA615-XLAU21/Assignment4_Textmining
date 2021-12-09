@@ -1,0 +1,256 @@
+---
+title: "Text Mining"
+author: "Xiang Li"
+date: "12/3/2021"
+output:
+  pdf_document: 
+  latex_engine: xelatex
+subtitle: ' Task 1 & 2 '
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE )
+library(gutenbergr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(tidytext)
+library(textdata)
+library(tnum)
+library(ggplot2)
+library(magrittr)
+library(utils)
+library(wordcloud)
+library(reshape2)
+library(gridExtra)
+library(magrittr)
+library(tidyverse)
+library(sentimentr)
+```
+
+# Task 1- Pick A Book
+
+I choose `My Doggie and I` by R.M.Ballantyne as the resource of my text analysis. `My Doggie And I` tells the story of John Mellon (almost a doctor in chapter one) and what happens to him after he meets a certain little canine. This story surrounds a child waif, a young woman, a young gentleman doctor, and an elderly lady. This tale unfolds the story of a bond that brings these unlikely friends together and merges their separate paths of life into one common path. 
+
+```{r}
+data(stop_words)
+doggie <- gutenberg_download(21752)
+# add linenumber
+tidy_doggie_Book <- doggie %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_doggie <- doggie %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+```
+
+First, let us get a basic sense of most common word in the book.
+
+```{r fig.width=6, fig.height=4,fig.align = "center", fig.cap=" A visualization of the most common words"}
+tidy_doggie%>%
+  count(word, sort = TRUE) %>%
+  filter(n > 45) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n , word)) +
+  geom_col() +
+  labs(y = NULL)+
+  ggtitle("Plot of most common words")
+```
+
+
+```{r}
+#get sentiments analysis and explore three dictionaries
+
+#get_sentiments("afinn")
+#get_sentiments("bing")
+#get_sentiments("nrc")
+
+#nrc_joy <- get_sentiments("nrc") %>% 
+ # filter(sentiment == "joy")
+#tidy_doggie %>%
+#  inner_join(nrc_joy) %>%
+ # count(word, sort = TRUE)
+```
+
+# Task 2- Bag of Words Analysis
+
+With several options for sentiment lexicons, we can use inner_join() to calculate the sentiment in different ways. Following the step in `Textmining in R`, I choose three general-purpose lexicons are
+            * `AFINN` from Finn Årup Nielsen,
+            * `bing` from Bing Liu and collaborators, and
+            * `nrc` from Saif Mohammad and Peter Turney.
+Then, I generate three plot which showed an estimate of the net sentiment (positive - negative) in each chunk of the novel text for each sentiment lexicon.
+
+```{r fig.width=6, fig.height=4,fig.align = "center", fig.cap="visualization of an estimate of the net sentiment (positive - negative) for each sentiment lexicon"}
+afinn <- tidy_doggie_Book %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = linenumber %/% 20) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  tidy_doggie_Book %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  tidy_doggie_Book %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 20, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+#### Discussion: 
+
+I use integer division to define larger sections of text every 20 line in the book. Then I have three distinct lexicons for calculating sentiment flows, which produce findings that differ in absolute terms but follow similar relative paths across the novel. In the novel, I detect comparable drops and peaks in  emotion at roughly the same locations, but the absolute numbers are much different. The `AFINN` lexicon has the highest absolute values and the highest positive values. `Bing et al` lexicon has lower absolute values and appears to mark longer chunks of continuous positive or negative text. The `NRC` findings are skewed upward in comparison to the other two, positively labeling the text, but identifies identical relative changes in the text. 
+
+\newpage
+
+One advantage of having the data frame with both sentiment and word is that we can analyze word counts that contribute to each sentiment. By implementing count() here with arguments of both word and sentiment, we find out how much each word contributed to each sentiment.
+Now let's look at the analysis for these bing and nrc lexicons.
+
+```{r fig.width=6, fig.height=3,fig.align = "center", fig.cap="Most common positive and negative words in Bing Lexcions"}
+#Most common positive and negative words in bing
+
+bing_word_counts <- tidy_doggie_Book %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+#bing_word_counts
+
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 10) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+
+```{r fig.width=6, fig.height=3,fig.align = "center", fig.cap="Most common positive and negative words in nrc Lexcions"}
+nrc_word_counts <- tidy_doggie_Book %>%
+  inner_join(get_sentiments("nrc")) %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))%>%
+     count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+nrc_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 10) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+#### Discussion:
+
+These two figures showed the most common negative and positive words in different lexicons. Different words have different contribution to sentiment in different lexicon. However, they both have `dumps` as most common negative words and `good` as most common positive words.
+
+\newpage
+
+### World Clouds
+
+Let's see the worldclouds for the `My Doggie and I` using worldcloud package.
+
+```{r fig.width=3, fig.height=3,fig.align = "center", fig.cap="Worldclouds with most common words."}
+#Worldclouds
+
+ tidy_doggie_Book%>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100))
+
+```
+
+In this figure, it displays the most common words used in the book, which are `doggie`, `willis`,`slidder` and so on. This cloud matched the plotline in my book since they are main character and main scene in my book.
+
+Let's see the worldclouds of most common negative and positive words for the `My Doggie and I`.
+
+```{r fig.width=3, fig.height=3,fig.align = "center", fig.cap="Worldclouds with most common negative and positive words."}
+tidy_doggie_Book %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("palegreen4", "rosybrown4"),
+                   max.words = 100)
+```
+
+In this figure, it displays the most common negative and positive words used in the book, which are `dumps`, `good`,`well` and so on. This cloud matched the plot line in my book since in the book, there are lots of dialogues and these words are often happened in the oral speaking.
+
+
+\pagebreak
+
+# Task 2 Extra credit
+
+The additional lexicons I found is that `loughran`. And here is the sentiment flow of the book.
+
+```{r fig.width=6, fig.height=5,fig.align = "center", fig.cap="Using loughran to create a sentiment flow"}
+
+loughran <- tidy_doggie_Book %>% 
+    inner_join(get_sentiments("loughran") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    )%>%
+  mutate(method = "loughran") %>%
+  count(method, index = linenumber %/% 20, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+#loughran %>%
+#  ggplot(aes(index, sentiment, fill = method)) +
+#  geom_col(show.legend = FALSE)
+
+bind_rows(afinn, 
+          bing_and_nrc,loughran) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+```
+
+## Discussion:
+Compared to previous three lexicons' result, the sentiment flow by `loughran` has the lower absolute values and the more negative values. Not surprisingly, this comparison plot adding `loughran` Lexicon produces findings that differ in absolute terms but follow similar relative paths across the novel. In the novel, I detect comparable drops and peaks in emotion at roughly the same locations, but the absolute numbers are much different.
+
+Here is the plot which showed how the most positive and negative words contributing to sentiment. Not like the previous two lexicons, the most negative word in `loughran` Lexicon is `poor`.
+```{r fig.width=6, fig.height=3, fig.cap="Most common positive and negative words in loughran Lexcions"}
+loughran_word_counts <- tidy_doggie_Book %>%
+  inner_join(get_sentiments("loughran")) %>%
+  filter(sentiment %in% c("positive", 
+                           "negative"))%>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+loughran_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 10) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
