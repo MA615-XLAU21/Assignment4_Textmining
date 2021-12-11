@@ -2,7 +2,9 @@
 title: "Text Mining-Task 3"
 author: "Xiang Li"
 date: "12/7/2021"
-output: pdf_document
+output: 
+  pdf_document:
+  latex_engine: xelatex
 ---
 
 ```{r setup, include=FALSE}
@@ -22,9 +24,14 @@ library(reshape2)
 library(gridExtra)
 library(magrittr)
 library(tidyverse)
+library(sentimentr)
+
 ```
 
 # Task 3
+
+I use the tnum ingested to load my book `My Doggie and I` into test2 number space. The name is `BallantyneR/DoggieandI`. Here is the verification. 
+
 ```{r}
 library(tnum)
 tnum.authorize("mssp1.bu.edu")
@@ -40,96 +47,147 @@ Book_Doggie <- gutenberg_download(21752)
 #Book_Doggie_tnum <- read.table("DoggieandI_text.txt", header = T)
 #tnBooksFromLines(Book_Doggie_tnum$text, "BallantyneR/DoggieandI")
 #tnum.getDBPathList(taxonomy="subject", levels=1)
+doggie_v5 <- tnum.query("BallantyneR/DoggieandI/heading# has text",max=500)
+
+doggie_vdf5 <- tnum.objectsToDf(doggie_v5)
+head(doggie_vdf5$subject)
 ```
 
-```{r}
-w1 <- tnum.query("BallantyneR/DoggieandI# has text", start = 3 ,max=18)
-wdf1 <- tnum.objectsToDf((w1))
-table_of_contents <- wdf1 %>% dplyr::select(string.value)
-
-q1 <- tnum.query(query = "BallantyneR/DoggieandI# has ordinal", max=500)   ## everything
- order1 <- tnum.objectsToDf(q1)
 
 
+# Using sentimentr package do sentiment analysis
 
-## Look at just the headings shows the structure of the book
-w23 <- tnum.query("BallantyneR/DoggieandI/heading# has text", max=40)
-wdf3 <- tnum.objectsToDf(w23)
+According to https://www.r-bloggers.com/2020/04/sentiment-analysis-in-r-with-sentimentr-that-handles-negation-valence-shifters/, I have the sentiment flow of the book sentence by sentence.
 
-w4 <- tnum.query("BallantyneR/DoggieandI/heading# has ordinal", max=40)
-wdf4 <- tnum.objectsToDf(w4)
-
-chapter_locations <- left_join(select(wdf3, subject, string.value), 
-                               select(wdf4, subject, numeric.value)) 
-                     
-chapter_locations %<>% mutate(chapter=1:14)
-
-w5 <- tnum.query("BallantyneR/DoggieandI/section:0008# has ordinal")
-wdf5 <- tnum.objectsToDf(w5)
-
-
-a <- chapter_locations %>% filter(chapter==2) %>% 
-                           select(numeric.value) %>% 
-                           unlist()
-
-a <- str_pad(as.character(a),4,side="left",pad="0")
-
-b <- paste0("BallantyneR/DoggieandI/section:",a,"#", " has ordinal")
-
-b
-w6 <- tnum.query("BallantyneR/DoggieandI/section:0008# has ordinal")
-
-
-
-## chapter 1 para 1, word counts for the 3 sentences in para 1
-q2 <- tnum.query("BallantyneR/DoggieandI# has *", max=3)
-df2 <- tnum.objectsToDf(q2)
-
-#  chapter locations  ordinal numbers
-ord_ch1 <- unlist(tnum.query("BallantyneR/DoggieandI/heading:0008# has ordinal"))
-ord_ch2 <- unlist(tnum.query("BallantyneR/DoggieandI/heading:0009# has ordinal"))
-
-
-ch1_txt <- tnum.query("BallantyneR/DoggieandI/section:0008/paragraph:0002/# has text", max=30)
-
-ch1_txt_df <- tnum.objectsToDf(ch1_txt)
-ch1_txt_df$string.value
-
-
-
-ch2_txt <- tnum.query("BallantyneR/DoggieandI/section:0008/paragraph:0002/sentence:# has *", max=30)
-ch2_txt_df <- tnum.objectsToDf(ch2_txt)
-
-ch2_txt_df$string.value
-
-length(ch2_txt_df$string.value)
-
-
-```
-
-#Sliced by sentences and do sentiment analysis
-```{r}
+```{r fig.width=10, fig.height=4, fig.cap="Sentiment flow analysis"}
 doggie_w5 <- tnum.query("BallantyneR/DoggieandI/section# has text",max=500)
 
 doggie_wdf5 <- tnum.objectsToDf(doggie_w5)
+#head(doggie_wdf5)
 
-para_doggie_wdf5 <- doggie_wdf5 %>% pull(string.value) %>% 
-                      str_replace_all("\"","") %>% 
-                      str_flatten(collapse = " ")
-
-
-doggie.1 <- para_doggie_wdf5 %>% 
+doggie.1 <- doggie_wdf5 %>% 
   get_sentences() %>% 
-  sentiment() 
+ sentiment()
 
-doggie.1 %>% 
-ggplot() + geom_col(aes(x= sentence_id,y = sentiment))
+plot_sentences_sentiment <- doggie.1%>% 
+ggplot() + geom_col(aes(x= element_id,y = sentiment))
+plot_sentences_sentiment
+```
+
+Here is the plot of density of average Sentiment of first 500 sentense.
+
+```{r fig.width=10, fig.height=4, fig.cap="Average Sentiment of the book"}
+plot_ave_sentiment <- doggie_wdf5%>% 
+  get_sentences() %>% 
+  sentiment_by(by = NULL) %>% 
+  ggplot() + geom_density(aes(ave_sentiment))
+plot_ave_sentiment
 
 ```
+This figure displays the density of average sentiment of the first 500 sentence in `Doggie and I`.
+
+```{r fig.width=6, fig.height=4,fig.align = "center", fig.cap="visualization of an estimate of the net sentiment (positive - negative) for each sentiment lexicon"}
+doggie.2 <- doggie_wdf5 %>% 
+  get_sentences()
+
+word_task3 <- doggie.2 %>% 
+  unnest_tokens(word, string.value)%>%
+  anti_join(stop_words)
+
+affin_task3 <- word_task3 %>%
+inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = element_id) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc_task3 <- bind_rows(
+  word_task3 %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  word_task3 %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = element_id, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+bind_rows(affin_task3, 
+          bing_and_nrc_task3) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+```
+Discussion: Similarly to the task2, instead of using integer division to define larger sections of text every 20 line in the book, I use sentence level in task 3. I have three distinct lexicons for calculating sentiment flows, which produce findings that differ in absolute terms but follow similar relative paths across the novel. In the novel, I detect comparable drops and peaks in  emotion at roughly the same locations, but the absolute numbers are much different. The `AFINN` lexicon has the highest absolute values and the highest positive values. `Bing et al` lexicon has lower absolute values and appears to mark longer chunks of continuous positive or negative text. The `NRC` findings are skewed upward in comparison to the other two, positively labeling the text, but identifies identical relative changes in the text. 
+
+Here is the summary of affin lexicon
+```{r}
+summary(affin_task3) 
+```
+```{r}
+
+Bing <- word_task3 %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al.") %>%
+  count(method, index = element_id , sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+  summary(Bing)
+p1 <- ggplot(Bing, aes(x = sentiment, y = ..density..)) + 
+  geom_histogram(binwidth = 0.25, fill = "#bada55", colour = "grey60") + 
+  geom_density(size = 0.75)+
+  ggtitle("Density Plot of Sentiment score in Bing Lexicon ")
+  
+
+nrc <- word_task3 %>% 
+    inner_join(get_sentiments("nrc")) %>%
+    mutate(method = "NRC.") %>%
+  count(method, index = element_id , sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+p2 <- ggplot(nrc, aes(x = sentiment, y = ..density..)) + 
+  geom_histogram(binwidth = 0.25, fill = "#bada55", colour = "grey60") + 
+  geom_density(size = 0.75)+
+  ggtitle("Density Plot of Sentiment score in NRC Lexicon ")
+  
+
+grid.arrange(p1,p2,ncol=1)
+
+```
+
 
 ```{r}
-doggie_word <- doggie_wdf5 %>% 
-  unnest_tokens(word,string.value) %>% anti_join(stop_words)
+bing_word_counts_task3 <- word_task3 %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
 ```
 
+
+# Extra Credit
+### character tagging
+```{r}
+qr1 <- tnum.query("BallantyneR/DoggieandI/section:# has * = REGEXP(\" Willis\")")
+qr1_df <-  tnum.objectsToDf(qr1)
+View(qr1_df)
+tnum.tagByQuery("BallantyneR/DoggieandI/section:# has * = REGEXP(\" Willis\")",
+adds = ("reference:Willis"))
+# now the quary for the tag gives you the same reference
+
+qr2 <- tnum.query("@reference:Willis")
+qr2_df <- tnum.objectsToDf(qr2)
+head(qr2_df)
+# now the quary for the tag gives you the same reference
+
+```
 
